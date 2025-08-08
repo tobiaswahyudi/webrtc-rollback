@@ -44,8 +44,39 @@ function setupConnection(connection) {
 }
 
 async function connect(roomId) {
-    // Create peer with room ID
-    peer = new Peer(roomId);
+    // ICE servers configuration with both STUN and TURN
+    const iceServers = [
+        // Google STUN servers (for discovering public IP)
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        
+        // Open Relay TURN servers (for NAT traversal)
+        {
+            urls: 'turn:staticauth.openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:staticauth.openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        
+        // Additional fallback TURN server
+        {
+            urls: 'turn:numb.viagenie.ca',
+            username: 'webrtc@live.com',
+            credential: 'muazkh'
+        }
+    ];
+
+    // Create peer with room ID and TURN server configuration
+    peer = new Peer(roomId, {
+        config: {
+            iceServers: iceServers
+        },
+        debug: 2  // Enable debug logs to see ICE negotiation
+    });
     
     peer.on('open', (id) => {
         log(`🚀 Waiting for peer to join room: ${id}`);
@@ -60,17 +91,37 @@ async function connect(roomId) {
     
     peer.on('error', (err) => {
         if (err.type === 'unavailable-id') {
-            // make random string
-            const randomString = makeRandomId();
-            peer = new Peer(randomString);
             // Room exists, try to connect to it
-            log(`🔗 Joining room: ${roomId}`);
-            const connection = peer.connect(roomId);
-            setupConnection(connection);
-            connectButton.textContent = 'Connected';
+            const randomString = makeRandomId();
+            
+            // Create new peer with random ID
+            peer = new Peer(randomString, {
+                config: {
+                    iceServers: iceServers
+                },
+                debug: 2
+            });
+            
+            peer.on('open', () => {
+                log(`🔗 Joining room: ${roomId}`);
+                const connection = peer.connect(roomId);
+                setupConnection(connection);
+                connectButton.textContent = 'Connected';
+            });
+            
+            peer.on('error', (error) => {
+                log(`❌ Connection error: ${error.message}`);
+                log('💡 Tip: Make sure both devices are using the same room ID');
+            });
         } else {
             log(`❌ Error: ${err.message}`);
         }
+    });
+    
+    // Log ICE connection state changes for debugging
+    peer.on('call', (call) => {
+        // Handle incoming calls if needed in the future
+        log('📞 Incoming call detected');
     });
 }
 
@@ -105,4 +156,6 @@ messageInput.addEventListener('keypress', (e) => {
 messageInput.disabled = true;
 messageInput.placeholder = 'Connect first...';
 
-log('Enter a room ID and click Connect to start chatting!');
+log('🌐 WebRTC P2P Chat Ready!');
+log('💡 Enter the same room ID on both devices to connect');
+log('🔧 Using STUN + TURN servers for NAT traversal');
